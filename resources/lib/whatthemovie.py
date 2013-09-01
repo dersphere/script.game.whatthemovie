@@ -361,13 +361,15 @@ class WhatTheMovie(object):
                         print 'Timeout occured, trying again...'
                         continue
                     # handle python 2.6 timeout (urllib2.URLError(socket.timeout))
+                    except urllib2.HTTPError:
+                        raise
                     except urllib2.URLError, exception:
-                        if not isinstance(exception.reason, socket.timeout):
-                            # re-raise non-timeout exception
-                            raise exception
-                        print repr(exception)
-                        print 'Timeout occured, trying again...'
-                        continue
+                        if isinstance(exception.reason, socket.timeout):
+                            print repr(exception)
+                            print 'Timeout occured, trying again...'
+                            continue
+                        # re-raise non-timeout exception
+                        raise
                     WhatTheMovie.Scraper.next_shots_lock.acquire()
                     if shot['shot_id'] in [s['shot_id'] for s in WhatTheMovie.Scraper.next_shots]:
                         pass
@@ -424,13 +426,15 @@ class WhatTheMovie(object):
                         image_url = WhatTheMovie.MAIN_URL + m_img.group(1)
                     else:
                         image_url = m_img.group(1)
-            subst_image_url = 'http://static.whatthemovie.com/images/subst'
             if self.image_download_path:
-                if not image_url.startswith(subst_image_url):
+                if not 'substitute' in image_url:
                     local_image_file = '%s%s.jpg' % (self.image_download_path,
                                                      shot_id)
                     self.download_file(image_url, local_image_file, referer=shot_url)
                     image_url = local_image_file
+                    is_explicit = False
+                else:
+                    is_explicit = True
             # languages
             lang_list = dict()
             lang_list['main'] = list()
@@ -585,6 +589,7 @@ class WhatTheMovie(object):
             self.shot['date'] = shot_date
             self.shot['already_solved'] = already_solved
             self.shot['self_posted'] = self_posted
+            self.shot['is_explicit'] = is_explicit
             self.shot['voting'] = voting
             self.shot['tags'] = tags
             self.shot['shot_type'] = shot_type
