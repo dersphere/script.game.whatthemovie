@@ -350,7 +350,17 @@ class WhatTheMovie(object):
                 while not is_new:
                     try:
                         shot = self.scrapeShot(job)
-                    except (urllib2.HTTPError, socket.timeout):
+                    # handle python 2.7 timeout (socket.timeout)
+                    except socket.timeout, exception:
+                        print repr(exception)
+                        print 'Timeout occured, trying again...'
+                        continue
+                    # handle python 2.6 timeout (urllib2.URLError(socket.timeout))
+                    except urllib2.URLError, exception:
+                        if not isinstance(exception.reason, socket.timeout):
+                            # re-raise non-timeout exception
+                            raise exception
+                        print repr(exception)
                         print 'Timeout occured, trying again...'
                         continue
                     WhatTheMovie.Scraper.next_shots_lock.acquire()
