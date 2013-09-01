@@ -70,8 +70,9 @@ class WhatTheMovie(object):
                       'title_year': (u'Pirates of the Caribbean: '
                                      u'At World\'s End (2007)')}
 
-    def __init__(self, user_agent):
+    def __init__(self, user_agent, http_timeout=30):
         # Get browser stuff
+        self.http_timeout = http_timeout
         self.cookies = cookielib.LWPCookieJar()
         processor = urllib2.HTTPCookieProcessor(self.cookies)
         self.opener = urllib2.build_opener(processor)
@@ -81,6 +82,12 @@ class WhatTheMovie(object):
         self.last_shots = list()
         self.image_download_path = None
         self.running = False
+
+    def _send_request(self, request):
+        return self.opener.open(request, timeout=self.http_timeout).read()
+
+    def _get_tree(self, url):
+        return BeautifulSoup(self._send_request(url))
 
     def login(self, user, password, cookie_path):
         logged_in = False
@@ -100,8 +107,8 @@ class WhatTheMovie(object):
             data_dict = dict()
             data_dict['name'] = user
             data_dict['upassword'] = password
-            data = urllib.urlencode(data_dict)
-            html = self.opener.open(login_url, data).read()
+            req = urllib2.Request(login_url, urllib.urlencode(data_dict))
+            html = self._send_request(req)
             logged_in_user = self._getUsername()
             if logged_in_user:
                 logged_in = 'auth'
@@ -115,7 +122,7 @@ class WhatTheMovie(object):
         self.callback = callback
         self.num_workers = num_workers
         self.num_init_jobs = num_init_jobs
-        self.workers = [self.Scraper(self.opener, self.image_download_path,
+        self.workers = [self.Scraper(self._send_request, self.image_download_path,
                         self.callback) for i in range(self.num_workers)]
         for worker in self.workers:
             worker.start()
@@ -134,7 +141,7 @@ class WhatTheMovie(object):
     def _getUsername(self, html=None):
         # only retrieve if there is no previous retrieve which we can use
         if not html:
-            html = self.opener.open(self.MAIN_URL).read()
+            html = self._send_request(self.MAIN_URL)
         tree = BeautifulSoup(html)
         section = tree.find('li', attrs={'class': 'secondary_nav',
                                          'style': 'margin-left: 0'})
@@ -160,7 +167,7 @@ class WhatTheMovie(object):
         req.add_header('Content-Type',
                        'application/x-www-form-urlencoded; charset=UTF-8')
         req.add_header('X-Requested-With', 'XMLHttpRequest')
-        response = self.opener.open(req).read()
+        response = self._send_request(req)
         response_c = response.replace('&amp;', '&').decode('unicode-escape')
         return response_c
 
@@ -314,9 +321,7 @@ class WhatTheMovie(object):
                  'all_score': 0}
         if self.OFFLINE_DEBUG:
             return score
-        profile_url = '%s/user/%s/' % (self.MAIN_URL, username)
-        html = self.opener.open(profile_url).read()
-        tree = BeautifulSoup(html)
+        tree = self._get_tree('%s/user/%s/' % (self.MAIN_URL, username))
         box = tree.find('div', attrs={'class': 'box_white'})
         r = ('>(?P<ff_score>[0-9]+) Feature Film.*'
              '>(?P<all_score>[0-9]+) Snapshot')
@@ -334,8 +339,8 @@ class WhatTheMovie(object):
         new_shot_condition = threading.Condition()
         exit_requested = False
 
-        def __init__(self, opener, image_download_path, callback=None):
-            self.opener = opener
+        def __init__(self, _send_request_func, image_download_path, callback=None):
+            self._send_request = _send_request_func
             self.callback = callback
             self.image_download_path = image_download_path
             threading.Thread.__init__(self)
@@ -386,15 +391,15 @@ class WhatTheMovie(object):
             req = urllib2.Request(url)
             if referer:
                 req.add_header('Referer', referer)
-            res = urllib2.urlopen(req)
+            res = self._send_request(req)
             f = open(local_file, 'wb')
-            f.write(res.read())
+            f.write(res)
             f.close()
 
         def scrapeShot(self, shot_request):
             self.shot = dict()
             shot_url = '%s/shot/%s' % (WhatTheMovie.MAIN_URL, shot_request)
-            html = self.opener.open(shot_url).read()
+            html = self._send_request(shot_url)
             tree = BeautifulSoup(html)
             # id
             shot_id = tree.find('li', attrs={'class': 'number'}).string.strip()
