@@ -193,6 +193,7 @@ class WhatTheMovie(object):
             if self.shot:  
                 self.last_shots.append(self.shot)
 
+            next_preload_request = None
             # We need a new shot via 'random'
             if shot_request == 'random':
                 # Check if there aren't enough 'random' shots in the preloads
@@ -205,8 +206,10 @@ class WhatTheMovie(object):
             elif shot_request.isdigit():
                 self.Scraper.jobs.put(shot_request)
 
-            # We need a new shot via navi_key
-            elif self.shot and shot_request in self.shot['nav'].keys():
+            # We need a new shot via navi_key, resolve it to ID
+            elif shot_request in self.shot['nav'].keys():
+                # but store the nav key (e.g. 'next_unsolved') for preloading
+                next_preload_request = shot_request
                 if not self.shot['nav'][shot_request]:
                     # check if it is a unsolved request and try without
                     if (shot_request[-9:] == '_unsolved'
@@ -215,8 +218,8 @@ class WhatTheMovie(object):
                         shot_request = self.shot['nav'][request]
                 else:
                     shot_request = self.shot['nav'][shot_request]
-                self.Scraper.jobs.put(shot_request)
-
+                if not shot_request in [s['requested_as'] for s in self.Scraper.next_shots]:
+                    self.Scraper.jobs.put(shot_request)
 
             # delete actual shot because we want a new one
             self.shot = None
@@ -231,6 +234,10 @@ class WhatTheMovie(object):
                     if shot['requested_as'] == shot_request:
                         # save the shot we want and delete from list
                         self.shot = self.Scraper.next_shots.pop(i)
+                        # if shot was requested from next/prev nav
+                        if next_preload_request:
+                            # preload shot of same type (next on next, etc)
+                            self.Scraper.jobs.put(self.shot['nav'][next_preload_request])
                         if self.callback:
                             self.callback(len(self.Scraper.next_shots))
                         # stop searching in the list of preloaded shots
